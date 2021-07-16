@@ -1201,3 +1201,354 @@ function channelname_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
+
+
+% --------------------------------------------------------------------
+function export_txt_average_values_Callback(hObject, eventdata, handles)
+% hObject    handle to export_txt_average_values (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+geovar=getappdata(0, 'geovar');
+handles.ChannelSel=get(handles.popupChannel,'Value')-1;
+
+if (handles.ChannelSel == 0)
+    
+else
+   
+   %Open save file window (only txt file format for now)
+   [file,path] = uiputfile('*.txt', 'Export average metrics values', 'average_metrics_values');
+
+   %get data from geovar and selected channel
+   data = geovar{handles.ChannelSel};
+   
+   tableValues = [cell2mat({data.nBends}), cell2mat({round(nanmean(data.sinuosityOfBends),2)}), cell2mat({round(nanmean(data.lengthCurved),2)}), cell2mat({round(nanmean(data.wavelengthOfBends),2)}), cell2mat({round(nanmean(data.amplitudeOfBends),2)})];
+   tableHeaders = ["numberBends", "Sinuosity", "Arc_Wavelength", "Wavelength", "Amplitude"];
+
+   %uncomment to save values as variables to workspace
+   %assignin('base','H',tableHeaders);
+   %assignin('base','V',tableValues);
+   
+   %output file
+   fid = fopen(strcat(path, file),'wt'); 
+    
+    for i = 1:5
+        fprintf(fid,'%s',tableHeaders(1,i));
+        fprintf(fid,'\t');
+        fprintf(fid,'%.3f',tableValues(1,i));
+        fprintf(fid,'\n');
+    end
+
+    fclose(fid);
+    
+end
+
+
+% --------------------------------------------------------------------
+function export_meancenterline_Callback(hObject, eventdata, handles)
+% hObject    handle to export_meancenterline (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+ 
+geovar=getappdata(0, 'geovar');
+handles.ChannelSel=get(handles.popupChannel,'Value')-1;
+
+if(handles.ChannelSel == 0)
+    %No action
+else
+    
+    %Open save file window (only shp file format for now)
+    [file,path] = uiputfile('*.shp', 'Export mean centerline', 'mstat_mean_centerline.shp');
+    
+    %get data from geovar and selected channel
+    data = geovar{handles.ChannelSel};
+    
+    %Create geovector with coordinates as vector (output file of type LINE)
+    geoMeancenterline = geoshape(-imag(data.x_sim), real(data.x_sim));
+    geoMeancenterline.Geometry = 'line';
+    shapewrite(geoMeancenterline, strcat(path, file));
+end
+
+
+% --------------------------------------------------------------------
+function export_bends_Callback(hObject, eventdata, handles)
+% hObject    handle to export_bends (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+geovar=getappdata(0, 'geovar');
+handles.ChannelSel=get(handles.popupChannel,'Value')-1;
+
+if(handles.ChannelSel == 0)
+    
+else
+    
+    %get data from geovar and selected channel
+    data = geovar{handles.ChannelSel};
+    
+    indexOfIntersectionPoints = zeros(1, length(data.intS));
+    bend = cell(1, length(indexOfIntersectionPoints) + 1);
+    
+    for i = 1:length(data.intS)
+    
+        v = data.intS(i);
+        [index, ~] = searchclosest(data.sResample, v);
+     
+        if isnan(index)
+            
+        else
+            indexOfIntersectionPoints(i) = index; 
+        end
+     
+    end
+    
+    for i = 1:length(indexOfIntersectionPoints)
+    
+        if (i == 1)
+
+            bend{1} = [data.equallySpacedX(1:indexOfIntersectionPoints(i)) data.equallySpacedY(1:indexOfIntersectionPoints(i))];
+
+        else
+
+            bend{i} = [data.equallySpacedX(indexOfIntersectionPoints(i - 1):indexOfIntersectionPoints(i)) data.equallySpacedY(indexOfIntersectionPoints(i - 1):indexOfIntersectionPoints(i))];
+
+        end
+
+    end
+    
+    bend{length(indexOfIntersectionPoints) + 1} = [data.equallySpacedX(indexOfIntersectionPoints(end):end) data.equallySpacedY(indexOfIntersectionPoints(end):end)];
+
+    %uncomment to save values as variables to workspace
+    %assignin('base','bend',bend);
+
+    hwait = waitbar(0,'Exporting bends...');
+
+    %Open save file window (only shp file format for now)
+    [file,path] = uiputfile('*.shp', 'Export bends information', 'mstat_bends.shp');
+
+    waitbar(1/3, hwait);
+    
+    geoStruct = struct('ID', 0, 'Geometry', 0, 'Lat', 0, 'Lon', 0, 'Sinuosity', 0, 'Arc_Wavelength', 0, 'Amplitude', 0);
+    geoStruct = repmat(geoStruct, length(bend), 1);
+    
+    %Populate Geostruct
+    [geoStruct(1:length(bend)).Geometry]  = deal('Line');
+
+    geoStruct(1).ID   = 1;
+    geoStruct(1).Lat  = bend{1}(:,2);
+    geoStruct(1).Lon  = bend{1}(:,1);
+    geoStruct(1).Sinuosity          = 0.0;
+    geoStruct(1).Arc_Wavelength     = 0.0;
+    geoStruct(1).Amplitude          = 0.0;
+    
+    geoStruct(end).ID   = length(bend);
+    geoStruct(end).Lat  = bend{end}(:,2);
+    geoStruct(end).Lon  = bend{end}(:,1);
+    geoStruct(end).Sinuosity          = 0.0;
+    geoStruct(end).Arc_Wavelength     = 0.0;
+    geoStruct(end).Amplitude          = 0.0;
+    
+    for i = 2:length(bend) - 1
+        
+        geoStruct(i).ID   = i;
+        geoStruct(i).Lat  = bend{i}(:,2);
+        geoStruct(i).Lon  = bend{i}(:,1);
+        geoStruct(i).Sinuosity          = data.sinuosityOfBends(i-1);
+        geoStruct(i).Arc_Wavelength     = data.lengthCurved(i-1);
+        geoStruct(i).Amplitude          = data.amplitudeOfBends(i-1);
+        
+    end
+    
+    waitbar(2/3, hwait);
+    
+    %uncomment to save values as variables to workspace
+    %assignin('base','geoStruct',geoStruct);
+    
+    shapewrite(geoStruct, strcat(path, file));
+    
+    waitbar(1, hwait);
+    delete(hwait);
+    
+end
+
+
+% --------------------------------------------------------------------
+function export_inflection_points_Callback(hObject, eventdata, handles)
+% hObject    handle to export_inflection_points (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+geovar=getappdata(0, 'geovar');
+handles.ChannelSel=get(handles.popupChannel,'Value')-1;
+
+if(handles.ChannelSel == 0)
+    %No action
+else
+    
+    %Open save file window (only shp file format for now)
+    [file,path] = uiputfile('*.shp', 'Export inflection points', 'mstat_inflection_points.shp');
+
+    %get data from geovar and selected channel
+    data = geovar{handles.ChannelSel};
+   
+    hwait = waitbar(0,'Exporting inflection points...');
+    
+    %Create geovector with coordinates as vector (output file of type Point)
+    Data = struct([]) ;  % initilaize structure 
+    
+    for i = 1:length(data.inflectionPts(:,1))
+        Data(i).Geometry = 'Point'; 
+        Data(i).Lat = data.inflectionPts(i,2);  % latitude 
+        Data(i).Lon = data.inflectionPts(i,1);  % longitude 
+        Data(i).Latitude = data.inflectionPts(i,2);  % latitude attribute
+        Data(i).Longitude = data.inflectionPts(i,1);  % longitude attribute
+        Data(i).ID  = i;  
+    end
+    
+    shapewrite(Data, strcat(path, file));
+    waitbar(1, hwait);
+    delete(hwait);
+    
+end
+
+
+% --------------------------------------------------------------------
+function export_max_curvature_points_Callback(hObject, eventdata, handles)
+% hObject    handle to export_max_curvature_points (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+geovar=getappdata(0, 'geovar');
+handles.ChannelSel=get(handles.popupChannel,'Value')-1;
+
+if(handles.ChannelSel == 0)
+    %No action
+else
+    
+    %Open save file window (only shp file format for now)
+    [file,path] = uiputfile('*.shp', 'Save max curvature points', 'mstat_max_curvature_points.shp');
+
+    %get data from geovar and selected channel
+    data = geovar{handles.ChannelSel};
+    
+    hwait = waitbar(0,'Exporting max curvature points...');
+    
+    %Create geovector with coordinates as vector (output file of type Point)
+    Data = struct([]) ;  % initilaize structure 
+    
+    for i = 1:length(data.newMaxCurvX)
+        Data(i).Geometry = 'Point'; 
+        Data(i).Lat = data.newMaxCurvY(i);  % latitude 
+        Data(i).Lon = data.newMaxCurvX(i);  % longitude 
+        Data(i).Latitude = data.newMaxCurvY(i);  % latitude attribute
+        Data(i).Longitude = data.newMaxCurvX(i);  % longitude attribute
+        Data(i).ID  = i;  
+    end
+    
+    shapewrite(Data, strcat(path, file));
+    
+    waitbar(1, hwait);
+    delete(hwait);
+    
+end
+
+
+% --------------------------------------------------------------------
+function export_bends_data_table_Callback(hObject, eventdata, handles)
+% hObject    handle to export_bends_data_table (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+geovar=getappdata(0, 'geovar');
+handles.ChannelSel=get(handles.popupChannel,'Value')-1;
+
+if(handles.ChannelSel == 0)
+    %No action
+else
+    
+    %Open save file window (only txt file format for now)
+    [file,path] = uiputfile('*.txt', 'Export bends data as table', 'bends_data_table');
+
+    %get data from geovar and selected channel
+    data = geovar{handles.ChannelSel};
+   
+    hwait = waitbar(0,'Exporting Excel File...');
+
+    fid = fopen(strcat(path, file),'wt');
+
+    generalHeaders = ["Total bends", "Total length", "Date created"];
+    generalValues = [convertCharsToStrings(num2str(data.nBends)), convertCharsToStrings(num2str(data.intS(end,1))), convertCharsToStrings(datestr(now))];
+
+    for i = 1:length(generalHeaders)
+        fprintf(fid,'%s',generalHeaders(1,i));
+        fprintf(fid,'\t');
+        fprintf(fid,'%s',generalValues(1,i));
+        fprintf(fid,'\n');
+    end
+
+    fprintf(fid,'\n');
+
+    waitbar(1/3, hwait);
+
+    dataHeaders = ["Bend ID", "Sinuosity", "Arc Wavelength", "Wavelength", "Amplitude", "Downstream length", "Upstream length", "Condition"];
+
+    for i = 1:length(dataHeaders)
+        fprintf(fid,'%s',dataHeaders(1,i));
+        fprintf(fid,'\t\t');
+    end
+
+    fprintf(fid,'\n');
+
+    for i = 1:data.nBends
+        fprintf(fid,'%s',convertCharsToStrings(num2str(data.bendID1(i))));
+        fprintf(fid,'\t\t');
+        fprintf(fid,'%s',convertCharsToStrings(num2str(data.sinuosityOfBends(i))));
+        fprintf(fid,'\t\t\t');
+        if (isnan(data.lengthCurved(i)) || data.lengthCurved(i) <= 0); fprintf(fid,'%s',"0000.0000"); else; fprintf(fid,'%s',convertCharsToStrings(num2str(data.lengthCurved(i)))); end
+        fprintf(fid,'\t\t');
+        if (isnan(data.wavelengthOfBends(i)) || data.wavelengthOfBends(i) <= 0); fprintf(fid,'%s',"0000.0000"); else; fprintf(fid,'%s',convertCharsToStrings(num2str(data.wavelengthOfBends(i)))); end
+        fprintf(fid,'\t\t');
+        if (isnan(data.amplitudeOfBends(i)) || data.amplitudeOfBends(i) <= 0); fprintf(fid,'%s',"0000.0000"); else; fprintf(fid,'%s',convertCharsToStrings(num2str(data.amplitudeOfBends(i)))); end
+        fprintf(fid,'\t\t');
+        if (isnan(data.downstreamSlength(i)) || data.downstreamSlength(i) <= 0); fprintf(fid,'%s',"0000.0000"); else; fprintf(fid,'%s',convertCharsToStrings(num2str(data.downstreamSlength(i)))); end
+        fprintf(fid,'\t\t\t');
+        if (isnan(data.upstreamSlength(i)) || data.upstreamSlength(i) <= 0); fprintf(fid,'%s',"0000.0000"); else; fprintf(fid,'%s',convertCharsToStrings(num2str(data.upstreamSlength(i)))); end
+        fprintf(fid,'\t\t\t');
+        fprintf(fid,'%s',data.condition{i});
+        fprintf(fid,'\n');
+    end
+
+    fprintf(fid,'\n');
+    fprintf(fid,'%s',"Mean Values");
+    fprintf(fid,'\n\n');
+
+    waitbar(2/3, hwait);
+
+    meanDataHeaders = ["Sinuosity", "Arc_Wavelength", "Wavelength", "Amplitude", "Condition"];
+
+    for i = 1:length(meanDataHeaders)
+        fprintf(fid,'%s',meanDataHeaders(1,i));
+        fprintf(fid,'\t\t');
+    end
+
+    [s,~,j] = unique(data.condition);
+
+    fprintf(fid,'\n');
+
+    fprintf(fid,'%s',convertCharsToStrings(round(nanmean(data.sinuosityOfBends), 2)));
+    fprintf(fid,'\t\t');
+    fprintf(fid,'%s',convertCharsToStrings(round(nanmean(data.lengthCurved), 2)));
+    fprintf(fid,'\t\t');
+    fprintf(fid,'%s',convertCharsToStrings(round(nanmean(data.wavelengthOfBends), 2)));
+    fprintf(fid,'\t\t');
+    fprintf(fid,'%s',convertCharsToStrings(round(nanmean(data.amplitudeOfBends), 2)));
+    fprintf(fid,'\t\t');
+    fprintf(fid,'%s', s{mode(j)});
+    fprintf(fid,'\n');
+
+    waitbar(1, hwait);
+    delete(hwait)
+
+    fclose(fid); 
+    
+end
